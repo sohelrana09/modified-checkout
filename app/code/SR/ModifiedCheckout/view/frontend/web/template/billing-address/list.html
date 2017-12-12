@@ -1,0 +1,13 @@
+<!-- ko if: (customerHasAddresses && isAddressFormListVisible)-->
+<div class="field field-select-billing">
+    <div class="control" data-bind="if: (addressOptions.length > 1)">
+        <select class="select" id="billing_address_id" name="billing_address_id" data-bind="
+        options: addressOptions,
+        optionsText: addressOptionsText,
+        optionsValue: 'customerAddressId',
+        value: selectedAddress,
+        event: {change: onAddressChange(selectedAddress())};
+    "></select>
+    </div>
+</div>
+<!-- /ko -->
