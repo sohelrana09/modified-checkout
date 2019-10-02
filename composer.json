@@ -22,7 +22,7 @@
     ],
     "autoload": {
         "files": [
-            "registration.php"
+            "app/code/SR/ModifiedCheckout/registration.php"
         ],
         "psr-4": {
             "SR\\ModifiedCheckout\\": "app/code/SR/ModifiedCheckout/"
