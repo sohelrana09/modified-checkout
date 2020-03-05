@@ -5,6 +5,7 @@ use Magento\Customer\Model\AttributeMetadataDataProvider;
 use Magento\Ui\Component\Form\AttributeMapper;
 use Magento\Checkout\Block\Checkout\AttributeMerger;
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Customer\Model\Options;
 
 class LayoutProcessor
 {
@@ -34,23 +35,32 @@ class LayoutProcessor
     public $quote = null;
 
     /**
+     * @var Options
+     */
+    public $options;
+
+    /**
      * LayoutProcessor constructor.
      *
      * @param AttributeMetadataDataProvider $attributeMetadataDataProvider
      * @param AttributeMapper $attributeMapper
      * @param AttributeMerger $merger
      * @param CheckoutSession $checkoutSession
+     * @param Options $options
      */
     public function __construct(
         AttributeMetadataDataProvider $attributeMetadataDataProvider,
         AttributeMapper $attributeMapper,
         AttributeMerger $merger,
-        CheckoutSession $checkoutSession
+        CheckoutSession $checkoutSession,
+        Options $options = null
     ) {
         $this->attributeMetadataDataProvider = $attributeMetadataDataProvider;
         $this->attributeMapper = $attributeMapper;
         $this->merger = $merger;
         $this->checkoutSession = $checkoutSession;
+        $this->options = $options ?: \Magento\Framework\App\ObjectManager::getInstance()
+            ->get(\Magento\Customer\Model\Options::class);
     }
 
     /**
@@ -83,6 +93,11 @@ class LayoutProcessor
         if($this->getQuote()->isVirtual()) {
             return $jsLayoutResult;
         }
+        
+        $attributesToConvert = [
+            'prefix' => [$this->options, 'getNamePrefixOptions'],
+            'suffix' => [$this->options, 'getNameSuffixOptions'],
+        ];
 
         if(isset($jsLayoutResult['components']['checkout']['children']['steps']['children']['shipping-step']['children']
             ['shippingAddress']['children']['shipping-address-fieldset'])) {
@@ -93,6 +108,7 @@ class LayoutProcessor
             ['children']['shippingAddress']['children']['shipping-address-fieldset']['children']['street']['children'][1]['placeholder'] = __('Street line 2');
 
             $elements = $this->getAddressAttributes();
+            $elements = $this->convertElementsToSelect($elements, $attributesToConvert);
             $jsLayoutResult['components']['checkout']['children']['steps']['children']['shipping-step']
             ['children']['shippingAddress']['children']['billing-address'] = $this->getCustomBillingAddressComponent($elements);
 
@@ -206,4 +222,38 @@ class LayoutProcessor
             ],
         ];
     }
+    
+    /**
+     * Convert elements(like prefix and suffix) from inputs to selects when necessary
+     *
+     * @param array $elements address attributes
+     * @param array $attributesToConvert fields and their callbacks
+     * @return array
+     */
+    private function convertElementsToSelect($elements, $attributesToConvert)
+    {
+        $codes = array_keys($attributesToConvert);
+        foreach (array_keys($elements) as $code) {
+            if (!in_array($code, $codes)) {
+                continue;
+            }
+            // phpcs:ignore Magento2.Functions.DiscouragedFunction
+            $options = call_user_func($attributesToConvert[$code]);
+            if (!is_array($options)) {
+                continue;
+            }
+            $elements[$code]['dataType'] = 'select';
+            $elements[$code]['formElement'] = 'select';
+
+            foreach ($options as $key => $value) {
+                $elements[$code]['options'][] = [
+                    'value' => $key,
+                    'label' => $value,
+                ];
+            }
+        }
+
+        return $elements;
+    }
 }
+
