@@ -5,6 +5,8 @@ use Magento\Customer\Model\AttributeMetadataDataProvider;
 use Magento\Ui\Component\Form\AttributeMapper;
 use Magento\Checkout\Block\Checkout\AttributeMerger;
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Customer\Model\Options;
+use Magento\Checkout\Helper\Data;
 
 class LayoutProcessor
 {
@@ -34,23 +36,40 @@ class LayoutProcessor
     public $quote = null;
 
     /**
+     * @var Options
+     */
+    public $options;
+
+    /**
+     * @var Data
+     */
+    private $checkoutDataHelper;
+
+    /**
      * LayoutProcessor constructor.
      *
      * @param AttributeMetadataDataProvider $attributeMetadataDataProvider
      * @param AttributeMapper $attributeMapper
      * @param AttributeMerger $merger
      * @param CheckoutSession $checkoutSession
+     * @param Data $checkoutDataHelper
+     * @param Options $options
      */
     public function __construct(
         AttributeMetadataDataProvider $attributeMetadataDataProvider,
         AttributeMapper $attributeMapper,
         AttributeMerger $merger,
-        CheckoutSession $checkoutSession
+        CheckoutSession $checkoutSession,
+        Data $checkoutDataHelper,
+        Options $options = null
     ) {
         $this->attributeMetadataDataProvider = $attributeMetadataDataProvider;
         $this->attributeMapper = $attributeMapper;
         $this->merger = $merger;
         $this->checkoutSession = $checkoutSession;
+        $this->checkoutDataHelper = $checkoutDataHelper;
+        $this->options = $options ?: \Magento\Framework\App\ObjectManager::getInstance()
+            ->get(\Magento\Customer\Model\Options::class);
     }
 
     /**
@@ -69,20 +88,22 @@ class LayoutProcessor
 
     /**
      * @param \Magento\Checkout\Block\Checkout\LayoutProcessor $subject
-     * @param array $jsLayout
+     * @param array $jsLayoutResult
      * @return array
      */
-    public function aroundProcess(
+    public function afterProcess(
         \Magento\Checkout\Block\Checkout\LayoutProcessor $subject,
-        \Closure $proceed,
-        array $jsLayout
+        array $jsLayoutResult
     ) {
-
-        $jsLayoutResult = $proceed($jsLayout);
 
         if($this->getQuote()->isVirtual()) {
             return $jsLayoutResult;
         }
+
+        $attributesToConvert = [
+            'prefix' => [$this->options, 'getNamePrefixOptions'],
+            'suffix' => [$this->options, 'getNameSuffixOptions'],
+        ];
 
         if(isset($jsLayoutResult['components']['checkout']['children']['steps']['children']['shipping-step']['children']
             ['shippingAddress']['children']['shipping-address-fieldset'])) {
@@ -93,6 +114,7 @@ class LayoutProcessor
             ['children']['shippingAddress']['children']['shipping-address-fieldset']['children']['street']['children'][1]['placeholder'] = __('Street line 2');
 
             $elements = $this->getAddressAttributes();
+            $elements = $this->convertElementsToSelect($elements, $attributesToConvert);
             $jsLayoutResult['components']['checkout']['children']['steps']['children']['shipping-step']
             ['children']['shippingAddress']['children']['billing-address'] = $this->getCustomBillingAddressComponent($elements);
 
@@ -100,6 +122,30 @@ class LayoutProcessor
             ['children']['shippingAddress']['children']['billing-address']['children']['form-fields']['children']['street']['children'][0]['placeholder'] = __('Street Address');
             $jsLayoutResult['components']['checkout']['children']['steps']['children']['shipping-step']
             ['children']['shippingAddress']['children']['billing-address']['children']['form-fields']['children']['street']['children'][1]['placeholder'] = __('Street line 2');
+        }
+
+        //Remove billing address from payment step
+        if ($this->checkoutDataHelper->isDisplayBillingOnPaymentMethodAvailable()) {
+            if(isset($jsLayoutResult['components']['checkout']['children']['steps']['children']['billing-step']['children']
+                ['payment']['children']['payments-list']['children'])) {
+
+                $paymentListChildren = $jsLayoutResult['components']['checkout']['children']['steps']['children']['billing-step']['children']
+                ['payment']['children']['payments-list']['children'];
+
+                foreach ($paymentListChildren as $childKey=>$childInfos) {
+                    if(!empty($childInfos['component']) && $childInfos['component'] == 'Magento_Checkout/js/view/billing-address') {
+                        unset($paymentListChildren[$childKey]);
+                    }
+                }
+                $jsLayoutResult['components']['checkout']['children']['steps']['children']['billing-step']['children']
+                ['payment']['children']['payments-list']['children'] = $paymentListChildren;
+            }
+        } else {
+            if (isset($jsLayoutResult['components']['checkout']['children']['steps']['children']['billing-step']['children']
+                ['payment']['children']['afterMethods']['children']['billing-address-form']) ) {
+                unset($jsLayoutResult['components']['checkout']['children']['steps']['children']['billing-step']['children']
+                    ['payment']['children']['afterMethods']['children']['billing-address-form']);
+            }
         }
 
         return $jsLayoutResult;
@@ -206,4 +252,38 @@ class LayoutProcessor
             ],
         ];
     }
+
+    /**
+     * Convert elements(like prefix and suffix) from inputs to selects when necessary
+     *
+     * @param array $elements address attributes
+     * @param array $attributesToConvert fields and their callbacks
+     * @return array
+     */
+    private function convertElementsToSelect($elements, $attributesToConvert)
+    {
+        $codes = array_keys($attributesToConvert);
+        foreach (array_keys($elements) as $code) {
+            if (!in_array($code, $codes)) {
+                continue;
+            }
+            // phpcs:ignore Magento2.Functions.DiscouragedFunction
+            $options = call_user_func($attributesToConvert[$code]);
+            if (!is_array($options)) {
+                continue;
+            }
+            $elements[$code]['dataType'] = 'select';
+            $elements[$code]['formElement'] = 'select';
+
+            foreach ($options as $key => $value) {
+                $elements[$code]['options'][] = [
+                    'value' => $key,
+                    'label' => $value,
+                ];
+            }
+        }
+
+        return $elements;
+    }
 }
+
