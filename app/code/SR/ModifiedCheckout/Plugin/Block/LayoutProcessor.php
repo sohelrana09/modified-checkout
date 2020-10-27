@@ -101,7 +101,17 @@ class LayoutProcessor
             $jsLayoutResult['components']['checkout']['children']['steps']['children']['shipping-step']
             ['children']['shippingAddress']['children']['billing-address']['children']['form-fields']['children']['street']['children'][1]['placeholder'] = __('Street line 2');
         }
+        if (isset($jsLayoutResult['components']['checkout']['children']['steps']['children']['billing-step']['children']
+                ['payment']['children']['payments-list']['children']
+		)) {
+			foreach ($jsLayoutResult['components']['checkout']['children']['steps']['children']['billing-step']['children']
+					 ['payment']['children']['payments-list']['children'] as $key => $payment) {
 
+				unset($jsLayoutResult['components']['checkout']['children']['steps']['children']['billing-step']['children']
+					['payment']['children']['payments-list']['children'][$key]);
+
+			}
+		}
         return $jsLayoutResult;
     }
 
